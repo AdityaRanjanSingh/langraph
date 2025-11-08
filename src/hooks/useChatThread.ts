@@ -7,6 +7,10 @@ interface UseChatThreadOptions {
   threadId: string | null;
 }
 
+interface ThreadMetadata {
+  isWaitingForApproval: boolean;
+}
+
 export interface UseChatThreadReturn {
   messages: MessageResponse[];
   isLoadingHistory: boolean;
@@ -16,6 +20,7 @@ export interface UseChatThreadReturn {
   sendMessage: (text: string, opts?: MessageOptions) => Promise<void>;
   refetchMessages: () => Promise<unknown>;
   approveToolExecution: (toolCallId: string, action: "allow" | "deny") => Promise<void>;
+  isWaitingForApproval: boolean;
 }
 
 export function useChatThread({ threadId }: UseChatThreadOptions): UseChatThreadReturn {
@@ -35,6 +40,16 @@ export function useChatThread({ threadId }: UseChatThreadOptions): UseChatThread
     enabled: !!threadId,
     queryFn: () => (threadId ? fetchMessageHistory(threadId) : Promise.resolve([])),
   });
+
+  // Store thread metadata (like approval state) in a separate query to persist across navigation
+  const { data: threadMetadata } = useQuery<ThreadMetadata>({
+    queryKey: ["threadMetadata", threadId],
+    queryFn: () => ({ isWaitingForApproval: false }), // Dummy queryFn, we manually manage this cache
+    enabled: false, // We manually manage this cache
+    initialData: { isWaitingForApproval: false },
+  });
+
+  const isWaitingForApproval = threadMetadata?.isWaitingForApproval ?? false;
 
   // Ensure we fetch once the threadId becomes available (guards initial undefined cases)
   useEffect(() => {
@@ -114,6 +129,15 @@ export function useChatThread({ threadId }: UseChatThreadOptions): UseChatThread
           }
         };
 
+        stream.addEventListener("interrupt", async (ev: Event) => {
+          // Graph is interrupted and waiting for tool approval
+          // Update the cache so the state persists across navigation
+          queryClient.setQueryData(["threadMetadata", threadId], (old: ThreadMetadata = { isWaitingForApproval: false }) => ({
+            ...old,
+            isWaitingForApproval: true,
+          }));
+        });
+
         stream.addEventListener("done", async () => {
           // Stream finished: clear flags and close
           setIsSending(false);
@@ -184,6 +208,12 @@ export function useChatThread({ threadId }: UseChatThreadOptions): UseChatThread
     async (toolCallId: string, action: "allow" | "deny") => {
       if (!threadId) return;
 
+      // Reset the waiting for approval state in the cache
+      queryClient.setQueryData(["threadMetadata", threadId], (old: ThreadMetadata = { isWaitingForApproval: false }) => ({
+        ...old,
+        isWaitingForApproval: false,
+      }));
+
       // Handle the streaming response with allowTool parameter, empty content since we're resuming
       await handleStreamResponse({
         threadId,
@@ -191,7 +221,7 @@ export function useChatThread({ threadId }: UseChatThreadOptions): UseChatThread
         opts: { allowTool: action },
       });
     },
-    [threadId, handleStreamResponse],
+    [threadId, queryClient, handleStreamResponse],
   );
 
   useEffect(
@@ -214,5 +244,6 @@ export function useChatThread({ threadId }: UseChatThreadOptions): UseChatThread
     sendMessage,
     refetchMessages: refetchMessagesQuery,
     approveToolExecution,
+    isWaitingForApproval,
   };
 }

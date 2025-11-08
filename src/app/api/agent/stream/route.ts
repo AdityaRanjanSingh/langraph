@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { streamResponse } from "@/services/agentService";
 import type { MessageResponse } from "@/types/message";
+import { ensureAgent } from "@/lib/agent";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -50,6 +51,30 @@ export async function GET(req: NextRequest) {
             // Only forward AI/tool chunks; ignore human/system
             if (chunk.type === "ai" || chunk.type === "tool") {
               send(chunk);
+            }
+          }
+
+          // After stream completes, check if the agent is in an interrupted state
+          // This happens when tool approval is required
+          if (!allowTool) {
+            const agent = await ensureAgent({
+              model,
+              provider,
+              tools,
+              approveAllTools,
+            });
+
+            const state = await agent.getState({ configurable: { thread_id: threadId } });
+
+            // Check if the graph is interrupted (waiting for tool approval)
+            if (state.next && state.next.length > 0) {
+              // Emit an interrupt event to signal the frontend to show approval UI
+              controller.enqueue(encoder.encode("event: interrupt\n"));
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ threadId, next: state.next })}\n\n`,
+                ),
+              );
             }
           }
 

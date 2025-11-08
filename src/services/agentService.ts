@@ -92,6 +92,9 @@ export async function streamResponse(params: {
 
 // Helper function to process any AI message and return the appropriate MessageResponse
 function processAIMessage(message: Record<string, unknown>): MessageResponse | null {
+  // Check if this message has tool_calls in the message object itself
+  const hasToolCalls = message.tool_calls && Array.isArray(message.tool_calls) && message.tool_calls.length > 0;
+
   // Check if this is a tool call (content is array with functionCall)
   const hasToolCall =
     Array.isArray(message.content) &&
@@ -99,7 +102,8 @@ function processAIMessage(message: Record<string, unknown>): MessageResponse | n
       (item: unknown) => item && typeof item === "object" && "functionCall" in item,
     );
 
-  if (hasToolCall) {
+  // If we have tool calls, always return the message even if content is empty
+  if (hasToolCall || hasToolCalls) {
     // Return full AIMessageData for tool calls to preserve all information
     return {
       type: "ai",
