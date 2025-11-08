@@ -9,6 +9,7 @@ import {
 } from "./util";
 import { getMCPTools } from "./mcp";
 import { AgentBuilder } from "./builder";
+import { gitTools } from "./tools/git";
 let setupPromise: Promise<void> | null = null;
 
 /**
@@ -39,10 +40,10 @@ async function createAgent(cfg?: AgentConfigOptions) {
   const modelName = cfg?.model || DEFAULT_MODEL_NAME;
   const llm = createChatModel({ provider, model: modelName, temperature: 1 });
 
-  // Load MCP tools
+  // Load MCP tools and git tools
   const mcpTools = await getMCPTools();
   const configTools = (cfg?.tools || []) as StructuredToolInterface[];
-  const allTools = [...configTools, ...mcpTools] as DynamicTool[];
+  const allTools = [...configTools, ...gitTools, ...mcpTools] as DynamicTool[];
 
   const agent = new AgentBuilder({
     llm,

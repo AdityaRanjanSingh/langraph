@@ -4,6 +4,7 @@ import { ArrowUp, Loader2, Eye, EyeOff } from "lucide-react";
 import { MessageOptions } from "@/types/message";
 import { SettingsPanel } from "./SettingsPanel";
 import { useUISettings } from "@/contexts/UISettingsContext";
+import { DEFAULT_MODEL_NAME, DEFAULT_MODEL_PROVIDER } from "@/lib/agent/util";
 
 interface MessageInputProps {
   onSendMessage: (message: string, opts?: MessageOptions) => Promise<void>;
@@ -18,8 +19,8 @@ export const MessageInput = ({
 }: MessageInputProps) => {
   const [message, setMessage] = useState("");
   const [isFocused, setIsFocused] = useState(false);
-  const [provider, setProvider] = useState<string>("google");
-  const [model, setModel] = useState<string>("gemini-2.5-flash");
+  const [provider, setProvider] = useState<string>(DEFAULT_MODEL_PROVIDER);
+  const [model, setModel] = useState<string>(DEFAULT_MODEL_NAME);
   const [approveAllTools, setApproveAllTools] = useState<boolean>(false);
   const [settingsExpanded, setSettingsExpanded] = useState<boolean>(false);
 

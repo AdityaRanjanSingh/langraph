@@ -32,5 +32,5 @@ export interface AgentConfigOptions {
   approveAllTools?: boolean; // if true, skip tool approval prompts
 }
 
-export const DEFAULT_MODEL_PROVIDER = "google";
-export const DEFAULT_MODEL_NAME = "gemini-2.5-flash";
+export const DEFAULT_MODEL_PROVIDER = "openai";
+export const DEFAULT_MODEL_NAME = "gpt-4o-mini";
