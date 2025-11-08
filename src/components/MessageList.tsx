@@ -17,9 +17,14 @@ const ToolMessage = dynamic(() => import("./ToolMessage").then((m) => m.ToolMess
 interface MessageListProps {
   messages: MessageResponse[];
   approveToolExecution?: (toolCallId: string, action: "allow" | "deny") => Promise<void>;
+  isWaitingForApproval?: boolean;
 }
 
-const MessageList = ({ messages, approveToolExecution }: MessageListProps) => {
+const MessageList = ({
+  messages,
+  approveToolExecution,
+  isWaitingForApproval = false,
+}: MessageListProps) => {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const { hideToolMessages } = useUISettings();
 
@@ -49,11 +54,15 @@ const MessageList = ({ messages, approveToolExecution }: MessageListProps) => {
         if (message.type === "human") {
           return <HumanMessage key={getMessageId(message)} message={message} />;
         } else if (message.type === "ai") {
+          // Show approval buttons if this is the last AI message AND we're waiting for approval
+          const isLastMessage = index === uniqueMessages.length - 1;
+          const shouldShowApproval = isLastMessage && isWaitingForApproval;
+
           return (
             <AIMessage
               key={getMessageId(message)}
               message={message}
-              showApprovalButtons={index === messages.length - 1} // Show buttons only on the latest AI message
+              showApprovalButtons={shouldShowApproval}
               approvalCallbacks={approvalCallbacks}
             />
           );

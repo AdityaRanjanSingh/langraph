@@ -37,7 +37,7 @@ export async function streamResponse(params: {
   });
 
   const iterable = await agent.stream(inputs, {
-    streamMode: ["updates"],
+    streamMode: ["updates", "values"],
     configurable: { thread_id: threadId },
   });
 

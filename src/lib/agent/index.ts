@@ -8,6 +8,7 @@ import {
   DEFAULT_MODEL_PROVIDER,
 } from "./util";
 import { getMCPTools } from "./mcp";
+import { databaseTools } from "./tools/database-tools";
 import { AgentBuilder } from "./builder";
 let setupPromise: Promise<void> | null = null;
 
@@ -42,7 +43,7 @@ async function createAgent(cfg?: AgentConfigOptions) {
   // Load MCP tools
   const mcpTools = await getMCPTools();
   const configTools = (cfg?.tools || []) as StructuredToolInterface[];
-  const allTools = [...configTools, ...mcpTools] as DynamicTool[];
+  const allTools = [...configTools, ...mcpTools, ...databaseTools] as DynamicTool[];
 
   const agent = new AgentBuilder({
     llm,

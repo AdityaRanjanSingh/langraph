@@ -31,12 +31,36 @@ export async function GET(req: NextRequest) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
+      let isClosed = false;
+
+      const safeEnqueue = (data: Uint8Array) => {
+        if (isClosed) return;
+        try {
+          controller.enqueue(data);
+        } catch (err) {
+          // Controller closed externally, mark as closed
+          isClosed = true;
+        }
+      };
+
       const send = (data: MessageResponse) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        safeEnqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      };
+
+      const safeClose = () => {
+        if (!isClosed) {
+          try {
+            controller.close();
+            isClosed = true;
+          } catch (err) {
+            // Controller already closed, ignore
+            isClosed = true;
+          }
+        }
       };
 
       // Initial comment to establish stream
-      controller.enqueue(encoder.encode(": connected\n\n"));
+      safeEnqueue(encoder.encode(": connected\n\n"));
 
       // Run the agent streaming in the background
       (async () => {
@@ -52,6 +76,7 @@ export async function GET(req: NextRequest) {
               send(chunk);
             }
           }
+
           // After stream completes, check if the agent is in an interrupted state
           // This happens when tool approval is required
           if (!allowTool) {
@@ -63,28 +88,39 @@ export async function GET(req: NextRequest) {
 
             const state = await agent.getState({ configurable: { thread_id: threadId } });
 
+            console.log("[STREAM] Checking for interrupt:", {
+              next: state.next,
+              tasks: state.tasks,
+              threadId,
+            });
+
             // Check if the graph is interrupted (waiting for tool approval)
             if (state.next && state.next.length > 0) {
+              console.log("[STREAM] Emitting interrupt event for thread:", threadId);
               // Emit an interrupt event to signal the frontend to show approval UI
-              controller.enqueue(encoder.encode("event: interrupt\n"));
-              controller.enqueue(
+              safeEnqueue(encoder.encode("event: interrupt\n"));
+              safeEnqueue(
                 encoder.encode(`data: ${JSON.stringify({ threadId, next: state.next })}\n\n`),
               );
+            } else {
+              console.log("[STREAM] No interrupt detected - state.next is empty");
             }
           }
+
           // Signal completion
-          controller.enqueue(encoder.encode("event: done\n"));
-          controller.enqueue(encoder.encode("data: {}\n\n"));
+          safeEnqueue(encoder.encode("event: done\n"));
+          safeEnqueue(encoder.encode("data: {}\n\n"));
         } catch (err: unknown) {
+          console.error("[STREAM] Error in agent stream:", err);
           // Emit an error event (client onerror will capture general network; providing data for diagnostics)
-          controller.enqueue(encoder.encode("event: error\n"));
-          controller.enqueue(
+          safeEnqueue(encoder.encode("event: error\n"));
+          safeEnqueue(
             encoder.encode(
               `data: ${JSON.stringify({ message: (err as Error)?.message || "Stream error", threadId })}\n\n`,
             ),
           );
         } finally {
-          controller.close();
+          safeClose();
         }
       })();
     },
