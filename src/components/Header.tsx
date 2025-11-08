@@ -26,6 +26,21 @@ export const Header = ({ toggleSidebar }: HeaderProps) => {
             </Link>
           </div>
         </div>
+
+        <nav className="flex items-center gap-4">
+          <Link
+            href="/"
+            className="text-sm font-medium text-gray-600 transition-colors hover:text-gray-900"
+          >
+            Chat
+          </Link>
+          <Link
+            href="/data-analysis"
+            className="text-sm font-medium text-gray-600 transition-colors hover:text-gray-900"
+          >
+            Data Analysis
+          </Link>
+        </nav>
       </div>
     </header>
   );

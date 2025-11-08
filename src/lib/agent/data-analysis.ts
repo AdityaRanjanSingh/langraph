@@ -1,4 +1,3 @@
-import { DEFAULT_SYSTEM_PROMPT as SYSTEM_PROMPT } from "./prompt";
 import { postgresCheckpointer } from "./memory";
 import type { DynamicTool, StructuredToolInterface } from "@langchain/core/tools";
 import {
@@ -8,14 +7,15 @@ import {
   DEFAULT_MODEL_PROVIDER,
 } from "./util";
 import { getMCPTools } from "./mcp";
-import { databaseTools } from "./tools/database-tools";
-import { AgentBuilder } from "./builder";
+import { DataAnalysisAgentBuilder } from "./data-analysis-agent-builder";
+import { dataAnalysisTools } from "./tools/data-analysis-tools";
+
 let setupPromise: Promise<void> | null = null;
 
 /**
  * One-time initialization for the Postgres checkpointer.
  * Ensures the underlying table/extension are ready before any agent runs.
- * This is called automatically when creating an agent via `getAgent` or `ensureAgent`.
+ * This is called automatically when creating an agent via `createDataAnalysisAgent`.
  */
 async function setupOnce() {
   if (!setupPromise) {
@@ -30,9 +30,9 @@ async function setupOnce() {
 }
 
 /**
- * Create a new agent instance with the given configuration.
+ * Create a new data analysis agent instance with the given configuration.
  * @param cfg Configuration options for the agent
- * @returns
+ * @returns Compiled LangGraph agent
  */
 async function createAgent(cfg?: AgentConfigOptions) {
   // Resolve model/provider from cfg or defaults.
@@ -40,15 +40,16 @@ async function createAgent(cfg?: AgentConfigOptions) {
   const modelName = cfg?.model || DEFAULT_MODEL_NAME;
   const llm = createChatModel({ provider, model: modelName, temperature: 1 });
 
-  // Load MCP tools
+  // Load MCP tools (optional - for extensibility)
   const mcpTools = await getMCPTools();
   const configTools = (cfg?.tools || []) as StructuredToolInterface[];
-  const allTools = [...configTools, ...mcpTools, ...databaseTools] as DynamicTool[];
 
-  const agent = new AgentBuilder({
+  // Combine data analysis tools with any additional tools
+  const allTools = [...dataAnalysisTools, ...configTools, ...mcpTools] as DynamicTool[];
+
+  const agent = new DataAnalysisAgentBuilder({
     llm,
     tools: allTools,
-    prompt: cfg?.systemPrompt || SYSTEM_PROMPT,
     checkpointer: postgresCheckpointer,
     approveAllTools: cfg?.approveAllTools || false,
   }).build();
@@ -56,17 +57,13 @@ async function createAgent(cfg?: AgentConfigOptions) {
   return agent;
 }
 
-// Public helper if explicit readiness is ever needed elsewhere.
-export async function ensureAgent(cfg?: AgentConfigOptions) {
+/**
+ * Create a data analysis agent instance, ensuring the checkpointer is ready.
+ * @param cfg Configuration options for the agent
+ * @returns Compiled LangGraph agent
+ */
+export async function createDataAnalysisAgent(cfg?: AgentConfigOptions) {
   // Ensure checkpointer is ready before returning an agent instance.
   await setupOnce();
   return createAgent(cfg);
 }
-
-// Named export to explicitly fetch a configured agent.
-export async function getAgent(cfg?: AgentConfigOptions) {
-  return ensureAgent(cfg);
-}
-
-// Eagerly create a default agent at module load using env defaults.
-export const defaultAgent = await ensureAgent();
