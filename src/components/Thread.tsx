@@ -13,8 +13,14 @@ interface ThreadProps {
 }
 
 export const Thread = ({ threadId, onFirstMessageSent }: ThreadProps) => {
-  const { messages, isLoadingHistory, isSending, sendMessage, approveToolExecution } =
-    useChatThread({ threadId });
+  const {
+    messages,
+    isLoadingHistory,
+    isSending,
+    sendMessage,
+    approveToolExecution,
+    isWaitingForApproval,
+  } = useChatThread({ threadId });
   const firstMessageInitiatedRef = useRef(false);
   const [awaitingFirstResponse, setAwaitingFirstResponse] = useState(false);
 
@@ -54,7 +60,11 @@ export const Thread = ({ threadId, onFirstMessageSent }: ThreadProps) => {
           <div className="min-h-0 flex-1">
             <ScrollArea className="h-full">
               <div className="space-y-4 px-4 py-4">
-                <MessageList messages={messages} approveToolExecution={approveToolExecution} />
+                <MessageList
+                  messages={messages}
+                  approveToolExecution={approveToolExecution}
+                  isWaitingForApproval={isWaitingForApproval}
+                />
               </div>
             </ScrollArea>
           </div>

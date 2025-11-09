@@ -9,6 +9,10 @@ import { Command } from "@langchain/langgraph";
 /**
  * Returns an async iterable producing incremental AI text chunks for a user text input.
  * Thread is ensured before streaming. The consumer (route) can package into SSE or any protocol.
+ *
+ * @returns An object with:
+ *   - messages: async generator of MessageResponse chunks
+ *   - getInterruptState: function to check if agent is interrupted after streaming completes
  */
 export async function streamResponse(params: {
   threadId: string;
@@ -86,11 +90,22 @@ export async function streamResponse(params: {
       }
     }
   }
-  return generator();
+
+  return {
+    messages: generator(),
+    async getInterruptState() {
+      const state = await agent.getState({ configurable: { thread_id: threadId } });
+      return state.next && state.next.length > 0 ? state.next : null;
+    },
+  };
 }
 
 // Helper function to process any AI message and return the appropriate MessageResponse
 function processAIMessage(message: Record<string, unknown>): MessageResponse | null {
+  // Check if this message has tool_calls in the message object itself
+  const hasToolCalls =
+    message.tool_calls && Array.isArray(message.tool_calls) && message.tool_calls.length > 0;
+
   // Check if this is a tool call (content is array with functionCall)
   const hasToolCall =
     Array.isArray(message.content) &&
@@ -98,7 +113,8 @@ function processAIMessage(message: Record<string, unknown>): MessageResponse | n
       (item: unknown) => item && typeof item === "object" && "functionCall" in item,
     );
 
-  if (hasToolCall) {
+  // If we have tool calls, always return the message even if content is empty
+  if (hasToolCall || hasToolCalls) {
     // Return full AIMessageData for tool calls to preserve all information
     return {
       type: "ai",

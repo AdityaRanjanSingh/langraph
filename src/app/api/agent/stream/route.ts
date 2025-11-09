@@ -25,51 +25,96 @@ export async function GET(req: NextRequest) {
         .map((t) => t.trim())
         .filter(Boolean)
     : undefined;
-  // Thread existence handled in service.
 
   const encoder = new TextEncoder();
+
+  // AbortController to handle client disconnection
+  const abortController = new AbortController();
+
   const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      const send = (data: MessageResponse) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+    async start(controller) {
+      // Helper to safely enqueue data
+      const safeEnqueue = (data: Uint8Array): boolean => {
+        try {
+          if (abortController.signal.aborted) {
+            return false;
+          }
+          controller.enqueue(data);
+          return true;
+        } catch {
+          // Controller already closed
+          return false;
+        }
+      };
+
+      const send = (data: MessageResponse): boolean => {
+        return safeEnqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      };
+
+      const sendEvent = (event: string, data?: Record<string, unknown>): boolean => {
+        const eventStr = `event: ${event}\n`;
+        const dataStr = data ? `data: ${JSON.stringify(data)}\n\n` : "data: {}\n\n";
+        return safeEnqueue(encoder.encode(eventStr + dataStr));
       };
 
       // Initial comment to establish stream
-      controller.enqueue(encoder.encode(": connected\n\n"));
+      if (!safeEnqueue(encoder.encode(": connected\n\n"))) {
+        return;
+      }
 
-      // Run the agent streaming in the background
-      (async () => {
-        try {
-          const iterable = await streamResponse({
-            threadId,
-            userText: userContent,
-            opts: { model, tools, allowTool: allowTool || undefined, approveAllTools },
-          });
-          for await (const chunk of iterable) {
-            // Only forward AI/tool chunks; ignore human/system
-            if (chunk.type === "ai" || chunk.type === "tool") {
-              send(chunk);
+      try {
+        // Start streaming response
+        const streamResult = await streamResponse({
+          threadId,
+          userText: userContent,
+          opts: { model, tools, allowTool: allowTool || undefined, approveAllTools },
+        });
+
+        // Stream all message chunks
+        for await (const chunk of streamResult.messages) {
+          if (abortController.signal.aborted) {
+            break;
+          }
+          // Only forward AI/tool chunks; ignore human/system
+          if (chunk.type === "ai" || chunk.type === "tool") {
+            if (!send(chunk)) {
+              break;
             }
           }
-
-          // Signal completion
-          controller.enqueue(encoder.encode("event: done\n"));
-          controller.enqueue(encoder.encode("data: {}\n\n"));
-        } catch (err: unknown) {
-          // Emit an error event (client onerror will capture general network; providing data for diagnostics)
-          controller.enqueue(encoder.encode("event: error\n"));
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ message: (err as Error)?.message || "Stream error", threadId })}\n\n`,
-            ),
-          );
-        } finally {
-          controller.close();
         }
-      })();
+
+        // After streaming completes, check for interrupts
+        // Only check if this is not a tool approval response
+        if (!allowTool && !abortController.signal.aborted) {
+          const interruptState = await streamResult.getInterruptState();
+          if (interruptState) {
+            sendEvent("interrupt", { threadId, next: interruptState });
+          }
+        }
+
+        // Signal completion
+        if (!abortController.signal.aborted) {
+          sendEvent("done");
+        }
+      } catch (err: unknown) {
+        // Emit an error event
+        if (!abortController.signal.aborted) {
+          sendEvent("error", {
+            message: (err as Error)?.message || "Stream error",
+            threadId,
+          });
+        }
+      } finally {
+        try {
+          controller.close();
+        } catch {
+          // Controller already closed
+        }
+      }
     },
     cancel() {
-      // If client disconnects, nothing special yet (LangGraph stream will stop as iteration halts)
+      // Signal abort when client disconnects
+      abortController.abort();
     },
   });
 
